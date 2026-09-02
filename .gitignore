@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build & Bundling
+dist/
+build/
+*.egg-info/
+
+# Scraping / Export Outputs
+backend/outputs/
+outputs/
+*.xlsx
+*.csv
+*.jsonl
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
