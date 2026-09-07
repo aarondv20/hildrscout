@@ -26,7 +26,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-export function SearchForm() {
+export function SearchForm({ showProgress = true }: { showProgress?: boolean }) {
   const jobs = useLeadStore((s) => s.jobs)
   const isSearching = useLeadStore((s) => s.isSearching)
   const activeJobId = useLeadStore((s) => s.activeJobId)
@@ -130,12 +130,12 @@ export function SearchForm() {
   const progressCfg = progressStatus ? (statusConfig[progressStatus] ?? statusConfig.running) : null
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader>
         <Search className="h-4.5 w-4.5 text-primary" />
         <CardTitle>New Search</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-1 flex-col gap-4">
         {/* ── Fields: 3 rows × 2 cols ───────────────────────────────── */}
         <form onSubmit={onSubmit} noValidate>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -206,8 +206,8 @@ export function SearchForm() {
           </div>
         </form>
 
-        {/* ── Inline progress bar (shown when job is active) ────────── */}
-        {progressStatus && progressCfg && (
+        {/* ── Inline progress bar (dashboard hides this via showProgress=false) ── */}
+        {showProgress && progressStatus && progressCfg && (
           <div className="border-t border-border pt-3">
             <Progress
               value={percent}

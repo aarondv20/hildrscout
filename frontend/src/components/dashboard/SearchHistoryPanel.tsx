@@ -33,7 +33,7 @@ export function SearchHistoryPanel() {
   const setPrefillSearch = useLeadStore((s) => s.setPrefillSearch)
   const navigate = useNavigate()
 
-  const recent = sessions.slice(0, 6)
+  const recent = sessions.slice(0, 5)
 
   const handleRerun = (session: SearchSession) => {
     setPrefillSearch({
@@ -47,22 +47,22 @@ export function SearchHistoryPanel() {
   }
 
   return (
-    <Card className="flex h-full min-h-0 flex-col">
+    <Card className="flex h-full flex-col">
       <CardHeader className="flex-row items-center justify-between">
         <div className="flex items-center gap-2">
           <Clock className="h-4.5 w-4.5 text-primary" />
           <CardTitle>Search History</CardTitle>
         </div>
-        {sessions.length > 6 && (
+        {sessions.length > 5 && (
           <button
-            onClick={() => navigate('/search')}
+            onClick={() => navigate('/search', { state: { expandHistory: true } })}
             className="text-xs text-primary hover:underline"
           >
             View all ({sessions.length})
           </button>
         )}
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col px-5 pb-4 pt-0">
+      <CardContent className="flex flex-col px-5 pb-4 pt-0">
         {recent.length === 0 ? (
           <EmptyState />
         ) : (

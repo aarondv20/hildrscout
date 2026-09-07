@@ -1,15 +1,21 @@
-import { motion } from 'framer-motion'
-import { RotateCcw, Search, Trash2 } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronDown, RotateCcw, Search, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
 import { BusinessDetails } from '../components/dashboard/BusinessDetails'
-import { LeadsTable } from '../components/dashboard/LeadsTable'
+import { LeadsTable, type LeadFilter } from '../components/dashboard/LeadsTable'
 import { SearchForm } from '../components/dashboard/SearchForm'
 import { StatusBadge } from '../components/dashboard/StatusBadge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
+import { NumberedPagination } from '../components/ui/NumberedPagination'
 import { GoogleMap } from '../components/map/GoogleMap'
+import { cn } from '../lib/utils'
 import { useHistoryStore, type SearchSession } from '../store/historyStore'
 import { useLeadStore } from '../store/leadStore'
+
+const HISTORY_PAGE_SIZE = 10
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('en-US', {
@@ -22,6 +28,12 @@ function formatDate(iso: string): string {
 }
 
 export function SearchPage() {
+  // ── Router state (from KPI card navigation) ─────────────────────
+  const location = useLocation()
+  const initialFilter = (
+    (location.state as { filter?: string } | null)?.filter ?? 'all'
+  ) as LeadFilter
+
   // ── History store ───────────────────────────────────────────────
   const sessions = useHistoryStore((s) => s.sessions)
   const deleteSession = useHistoryStore((s) => s.deleteSession)
@@ -36,6 +48,31 @@ export function SearchPage() {
   const selectLead = useLeadStore((s) => s.selectLead)
   const setPrefillSearch = useLeadStore((s) => s.setPrefillSearch)
 
+  // ── Search History accordion state ──────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyPage, setHistoryPage] = useState(1)
+
+  // Reset page when closing accordion or sessions change
+  useEffect(() => {
+    if (!historyOpen) setHistoryPage(1)
+  }, [historyOpen])
+
+  const totalHistoryPages = Math.ceil(sessions.length / HISTORY_PAGE_SIZE)
+  const pagedSessions = sessions.slice(
+    (historyPage - 1) * HISTORY_PAGE_SIZE,
+    historyPage * HISTORY_PAGE_SIZE,
+  )
+
+  // ── Accordion scroll ref ─────────────────────────────────────────
+  const historyRef = useRef<HTMLDivElement>(null)
+
+  const scrollToHistory = (delay = 250) => {
+    setTimeout(() => {
+      historyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, delay)
+  }
+
+  // ── Derived ─────────────────────────────────────────────────────
   const currentLeads = activeJobId ? (leads[activeJobId] ?? []) : []
   const jobStatus = activeJobId ? (jobs[activeJobId] ?? null) : null
 
@@ -55,6 +92,29 @@ export function SearchPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // ── KPI card scroll-to-results + expandHistory from Dashboard ────
+  useEffect(() => {
+    const state = location.state as {
+      filter?: string
+      scrollToResults?: boolean
+      expandHistory?: boolean
+    } | null
+
+    if (state?.expandHistory) {
+      // Auto-expand the accordion and scroll to it
+      setHistoryOpen(true)
+      scrollToHistory(300)
+    } else if (state && (state.filter || state.scrollToResults)) {
+      const el = document.getElementById('current-search-results')
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 100)
+      }
+    }
+  }, [location.state])
+
+
   return (
     <AppLayout>
       {/* ── Page header ──────────────────────────────────────────────── */}
@@ -66,10 +126,6 @@ export function SearchPage() {
       </div>
 
       {/* ── Main 2-column grid — left stacks, map spans both rows ─── */}
-      {/*
-          Col 1 (50%): SearchForm (row 1) · BusinessDetails (row 2)
-          Col 2 (50%): GoogleMap (row-span-2)
-      */}
       <div
         className="grid gap-5"
         style={{ gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'auto auto' }}
@@ -98,7 +154,7 @@ export function SearchPage() {
       </div>
 
       {/* ── Current Search Results (full width) ─────────────────────── */}
-      <div>
+      <div id="current-search-results" className="scroll-mt-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-foreground">Current Search Results</h3>
           {activeJobId && (
@@ -113,84 +169,151 @@ export function SearchPage() {
           onSelectLead={selectLead}
           activeJobId={activeJobId}
           selectedLead={selectedLead}
+          initialFilter={initialFilter}
         />
       </div>
 
-      {/* ── Search History backlog ───────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-foreground">Search History</h3>
-          <span className="text-xs text-muted-foreground">
-            {sessions.length} session{sessions.length !== 1 ? 's' : ''}
-          </span>
-        </div>
+      {/* ── Search History — collapsible accordion ───────────────────── */}
+      <div ref={historyRef} className="scroll-mt-6">
+        {/* Accordion trigger */}
+        <button
+          onClick={() => {
+            const opening = !historyOpen
+            setHistoryOpen(opening)
+            if (opening) scrollToHistory()
+          }}
+          className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-5 py-3.5 text-left shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-expanded={historyOpen}
+        >
+          <div className="flex items-center gap-3">
+            <h3 className="text-base font-semibold text-foreground">Search History</h3>
+            {sessions.length > 0 && (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                {sessions.length}
+              </span>
+            )}
+          </div>
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 text-muted-foreground transition-transform duration-200',
+              historyOpen && 'rotate-180',
+            )}
+          />
+        </button>
 
-        {sessions.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <Search className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-muted-foreground">No searches yet</p>
-              <p className="text-xs text-muted-foreground/70">Use the form above to start your first scraping job.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent className="p-0">
-              {/* Table header */}
-              <div className="hidden sm:grid grid-cols-[1fr_140px_80px_70px_70px_110px_90px] gap-4 px-5 py-2.5 border-b border-border bg-accent/40 text-xs font-medium text-muted-foreground uppercase tracking-wide rounded-t-xl">
-                <span>Keyword / Location</span>
-                <span>Date</span>
-                <span className="text-center">Leads</span>
-                <span className="text-center">Emails</span>
-                <span className="text-center">Phones</span>
-                <span>Status</span>
-                <span />
+        {/* Accordion body */}
+        <AnimatePresence initial={false}>
+          {historyOpen && (
+            <motion.div
+              key="history-body"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="pt-3">
+                {sessions.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                      <Search className="h-10 w-10 text-muted-foreground/30" />
+                      <p className="text-sm font-medium text-muted-foreground">No searches yet</p>
+                      <p className="text-xs text-muted-foreground/70">
+                        Use the form above to start your first scraping job.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="p-0">
+                      {/* Table header */}
+                      <div className="hidden sm:grid grid-cols-[1fr_140px_80px_70px_70px_110px_90px] gap-4 px-5 py-2.5 border-b border-border bg-accent/40 text-xs font-medium text-muted-foreground uppercase tracking-wide rounded-t-xl">
+                        <span>Keyword / Location</span>
+                        <span>Date</span>
+                        <span className="text-center">Leads</span>
+                        <span className="text-center">Emails</span>
+                        <span className="text-center">Phones</span>
+                        <span>Status</span>
+                        <span />
+                      </div>
+
+                      <div className="divide-y divide-border">
+                        {pagedSessions.map((session, i) => (
+                          <motion.div
+                            key={session.id}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03, duration: 0.25 }}
+                            className="grid grid-cols-1 sm:grid-cols-[1fr_140px_80px_70px_70px_110px_90px] gap-2 sm:gap-4 items-center px-5 py-3.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-foreground text-sm truncate">
+                                {session.keyword}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {session.location}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatDate(session.startedAt)}
+                            </p>
+                            <p className="text-sm text-center font-medium text-foreground">
+                              {session.leadCount}
+                            </p>
+                            <p className="text-sm text-center text-muted-foreground">
+                              {session.emailCount}
+                            </p>
+                            <p className="text-sm text-center text-muted-foreground">
+                              {session.phoneCount}
+                            </p>
+                            <StatusBadge status={session.status} />
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRerun(session)}
+                                title="Pre-fill the form with this search"
+                                className="h-7 px-2 text-xs"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                Re-run
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => deleteSession(session.id)}
+                                title="Remove from history"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+
+                      {/* Pagination footer */}
+                      {totalHistoryPages > 1 && (
+                        <div className="flex items-center justify-between border-t border-border px-5 py-3">
+                          <span className="text-xs text-muted-foreground">
+                            Showing {(historyPage - 1) * HISTORY_PAGE_SIZE + 1}–
+                            {Math.min(historyPage * HISTORY_PAGE_SIZE, sessions.length)} of{' '}
+                            {sessions.length}
+                          </span>
+                          <NumberedPagination
+                            currentPage={historyPage}
+                            totalPages={totalHistoryPages}
+                            onPageChange={setHistoryPage}
+                          />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-              <div className="divide-y divide-border">
-                {sessions.map((session, i) => (
-                  <motion.div
-                    key={session.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.03, duration: 0.25 }}
-                    className="grid grid-cols-1 sm:grid-cols-[1fr_140px_80px_70px_70px_110px_90px] gap-2 sm:gap-4 items-center px-5 py-3.5"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-foreground text-sm truncate">{session.keyword}</p>
-                      <p className="text-xs text-muted-foreground truncate">{session.location}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(session.startedAt)}</p>
-                    <p className="text-sm text-center font-medium text-foreground">{session.leadCount}</p>
-                    <p className="text-sm text-center text-muted-foreground">{session.emailCount}</p>
-                    <p className="text-sm text-center text-muted-foreground">{session.phoneCount}</p>
-                    <StatusBadge status={session.status} />
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRerun(session)}
-                        title="Pre-fill the form with this search"
-                        className="h-7 px-2 text-xs"
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        Re-run
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => deleteSession(session.id)}
-                        title="Remove from history"
-                        className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </AppLayout>
   )

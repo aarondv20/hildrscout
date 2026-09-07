@@ -2,7 +2,6 @@ import { motion } from 'framer-motion'
 import { Route, Routes } from 'react-router-dom'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
-import { ExportsHistoryPanel } from './components/dashboard/ExportsHistoryPanel'
 import { KPICards } from './components/dashboard/KPICards'
 import { ProgressCard } from './components/dashboard/ProgressCard'
 import { SearchDetails } from './components/dashboard/SearchDetails'
@@ -61,23 +60,20 @@ function Dashboard() {
             exportCount={exportsCompleted}
           />
 
-          {/* ── Row 2: New Search + Search Details (equal halves) ──────── */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SearchForm />
+          {/* ── Row 2: New Search (50%) | Search Progress (50%) ────────── */}
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+            <SearchForm showProgress={false} />
+            <ProgressCard jobStatus={jobStatus} />
+          </div>
+
+          {/* ── Row 3: Search Details (25%) | Search History (75%) ─────── */}
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[1fr_3fr]">
             <SearchDetails
               searchRequest={searchRequest}
               status={jobStatus?.status ?? 'idle'}
               startedAt={startedAt}
             />
-          </div>
-
-          {/* ── Row 3: Search Progress (full width) ────────────────────── */}
-          <ProgressCard jobStatus={jobStatus} />
-
-          {/* ── Row 4: History panels (equal halves) ───────────────────── */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SearchHistoryPanel />
-            <ExportsHistoryPanel />
           </div>
         </motion.main>
       </div>

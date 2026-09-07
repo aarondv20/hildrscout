@@ -8,14 +8,27 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { ArrowUpDown, Download, Globe, Mail, MapPin, Phone, Star, Users } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Check,
+  ChevronDown,
+  Download,
+  Filter,
+  Globe,
+  Mail,
+  MapPin,
+  Phone,
+  Share2,
+  Star,
+  Users,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn, formatNumber, getDomain } from '../../lib/utils'
 import type { Business } from '../../types'
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
 import { Input } from '../ui/input'
-import { Select } from '../ui/select'
+import { NumberedPagination } from '../ui/NumberedPagination'
 import { Skeleton } from '../ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import { motion } from 'framer-motion'
@@ -25,12 +38,29 @@ import { useHistoryStore } from '../../store/historyStore'
 import { useLeadStore } from '../../store/leadStore'
 import { useUIStore } from '../../store/uiStore'
 
+// ─── Filter type ──────────────────────────────────────────────────────────────
+export type LeadFilter = 'all' | 'withEmail' | 'withPhone' | 'withSocial'
+
+const FILTER_OPTIONS: {
+  value: LeadFilter
+  label: string
+  icon: React.ReactNode
+}[] = [
+  { value: 'all',        label: 'All',               icon: <Filter  className="h-3.5 w-3.5 opacity-60" /> },
+  { value: 'withEmail',  label: 'With Emails',        icon: <Mail    className="h-3.5 w-3.5 opacity-60" /> },
+  { value: 'withPhone',  label: 'With Phone Numbers', icon: <Phone   className="h-3.5 w-3.5 opacity-60" /> },
+  { value: 'withSocial', label: 'With Social Media',  icon: <Share2  className="h-3.5 w-3.5 opacity-60" /> },
+]
+
+// ─── Social icons ─────────────────────────────────────────────────────────────
 interface LeadsTableProps {
   leads: Business[]
   isSearching: boolean
   onSelectLead: (business: Business) => void
   activeJobId: string | null
   selectedLead: Business | null
+  /** Pre-select a filter when navigating from a KPI card */
+  initialFilter?: LeadFilter
 }
 
 function SocialIcon({ href, children, label }: { href?: string | null; children: React.ReactNode; label: string }) {
@@ -79,18 +109,77 @@ function TikTokIcon({ href }: { href?: string | null }) {
   )
 }
 
-export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, selectedLead }: LeadsTableProps) {
+export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, selectedLead, initialFilter }: LeadsTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
+  const [leadFilters, setLeadFilters] = useState<LeadFilter[]>(
+    initialFilter && initialFilter !== 'all' ? [initialFilter] : []
+  )
+  const [filterOpen, setFilterOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportNotice, setExportNotice] = useState<string | null>(null)
   const exportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const filterDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Initialize to current activeJobId so on first effect run prevId === activeJobId
+  // (meaning "same job = apply filter", not "job changed = reset").
+  // StrictMode-safe: ref is initialized before any effect runs.
+  const prevJobIdRef = useRef<string | null | undefined>(activeJobId)
+
+  // Single effect handles both navigation (initialFilter) and new-search (reset).
+  //
+  //  • prevId === activeJobId → same job or initial mount → apply initialFilter
+  //  • prevId !== activeJobId → genuinely new search started  → reset everything
+  //
+  // This eliminates the ordering race between the old two-effect approach
+  // and is immune to React StrictMode's double-invoke behaviour.
+  useEffect(() => {
+    const prevId = prevJobIdRef.current
+    prevJobIdRef.current = activeJobId
+
+    if (prevId !== activeJobId) {
+      // New search started — clear all filter state
+      setLeadFilters([])
+      setGlobalFilter('')
+    } else {
+      // Same job (or initial mount / StrictMode re-run) — honour navigation filter
+      if (initialFilter && initialFilter !== 'all') {
+        setLeadFilters([initialFilter])
+      } else {
+        setLeadFilters([])
+      }
+    }
+  }, [activeJobId, initialFilter])
+
+  // Click-outside to close filter dropdown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setFilterOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   useEffect(() => {
     return () => {
       if (exportTimerRef.current) clearTimeout(exportTimerRef.current)
     }
   }, [])
+
+  // ── Pre-filter by contact type (real-time: runs whenever leads or filter changes)
+  const contactFilteredLeads = useMemo<Business[]>(() => {
+    if (leadFilters.length === 0) return leads
+
+    return leads.filter((l) => {
+      let match = true
+      if (leadFilters.includes('withEmail') && l.email.length === 0) match = false
+      if (leadFilters.includes('withPhone') && !l.phone) match = false
+      if (leadFilters.includes('withSocial') && !l.facebook && !l.instagram && !l.tiktok) match = false
+      return match
+    })
+  }, [leads, leadFilters])
 
   const columns = useMemo<ColumnDef<Business>[]>(
     () => [
@@ -201,9 +290,7 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
             ['instagram', b.instagram],
             ['tiktok', b.tiktok],
           ]
-          const found = platforms.filter(([, href]) => Boolean(href)) as Array<
-            [string, string]
-          >
+          const found = platforms.filter(([, href]) => Boolean(href)) as Array<[string, string]>
           if (found.length === 0) {
             return <span className="text-muted-foreground/50">—</span>
           }
@@ -230,7 +317,7 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
   )
 
   const table = useReactTable({
-    data: leads,
+    data: contactFilteredLeads,   // ← contact-filtered; text search runs on top via globalFilter
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
@@ -239,7 +326,7 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 25 } },
+    initialState: { pagination: { pageSize: 10 } },
   })
 
   const pageIndex = table.getState().pagination.pageIndex
@@ -269,27 +356,68 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
       const response = await axios.get<Blob>(`${apiBase()}/api/export/${activeJobId}`, {
         responseType: 'blob',
       })
-      const url = URL.createObjectURL(response.data)
-      const a = document.createElement('a')
-      a.href = url
+
+      // ── Derive suggested filename from Content-Disposition header ──
       const disposition = (response.headers['content-disposition'] as string | undefined) ?? ''
-      const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
-      let downloadName: string
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?\"?([^";]+)\"?/i)
+      const mimeType = response.data.type
+      let suggestedName: string
       if (match) {
-        downloadName = match[1]
+        suggestedName = decodeURIComponent(match[1].trim())
       } else {
-        const type = response.data.type
-        downloadName = type.includes('csv')
+        suggestedName = mimeType.includes('csv')
           ? 'hildr_scout.csv'
-          : type.includes('json')
+          : mimeType.includes('json')
             ? 'hildr_scout.json'
             : 'hildr_scout.xlsx'
       }
-      a.download = downloadName
-      a.click()
-      URL.revokeObjectURL(url)
 
-      // Persist to export history
+      // ── File extension → MIME accept map for the Save dialog ───────
+      const ext = suggestedName.split('.').pop()?.toLowerCase() ?? 'xlsx'
+      const mimeForExt: Record<string, string> = {
+        csv:  'text/csv',
+        json: 'application/json',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }
+      const acceptMime = mimeForExt[ext] ?? mimeType
+
+      let savedName = suggestedName
+
+      // ── File System Access API (Save As dialog) ─────────────────────
+      if ('showSaveFilePicker' in window) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fileHandle = await (window as any).showSaveFilePicker({
+            suggestedName,
+            types: [
+              {
+                description: `${ext.toUpperCase()} File`,
+                accept: { [acceptMime]: [`.${ext}`] },
+              },
+            ],
+            excludeAcceptAllOption: false,
+          })
+          // The handle's .name reflects whatever the user typed in the dialog
+          savedName = fileHandle.name as string
+          const writable = await fileHandle.createWritable()
+          await writable.write(response.data)
+          await writable.close()
+        } catch (err: unknown) {
+          // User dismissed the dialog — abort silently (finally still runs)
+          if (err instanceof DOMException && err.name === 'AbortError') return
+          throw err   // Re-throw any real errors to the outer catch
+        }
+      } else {
+        // ── Fallback: classic <a> anchor download ──────────────────────
+        const url = URL.createObjectURL(response.data)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = suggestedName
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+
+      // ── Record in export history ────────────────────────────────────
       const searchRequest = useLeadStore.getState().searchRequest
       const allLeads = useLeadStore.getState().leads[activeJobId] ?? []
       useHistoryStore.getState().addExport({
@@ -297,12 +425,12 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
         keyword: searchRequest?.keyword ?? 'Unknown',
         location: searchRequest?.location ?? '',
         format: searchRequest?.output_format ?? 'excel',
-        filename: downloadName,
+        filename: savedName,
         exportedAt: new Date().toISOString(),
         leadCount: allLeads.length,
       })
 
-      setExportNotice(`Exported ${downloadName}`)
+      setExportNotice(`Saved ${savedName}`)
       if (exportTimerRef.current) clearTimeout(exportTimerRef.current)
       exportTimerRef.current = setTimeout(() => setExportNotice(null), 4000)
     } catch (err) {
@@ -317,10 +445,25 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
     }
   }
 
+  // Label shown on the filter button
+  const activeFilterOptions = FILTER_OPTIONS.filter((o) => leadFilters.includes(o.value))
+  const filterLabel = leadFilters.length === 0 
+    ? 'All' 
+    : leadFilters.length === 1 
+      ? activeFilterOptions[0]?.label 
+      : `Filters (${leadFilters.length})`
+
+  // Displayed count: after both contact filter + text search
+  const visibleCount = table.getFilteredRowModel().rows.length
+
   return (
     <Card className="flex flex-col">
       <CardContent className="flex flex-col gap-4 pt-5">
+
+        {/* ── Toolbar: search input + filter dropdown ────────────────── */}
         <div className="flex flex-wrap items-center gap-3">
+
+          {/* Text search */}
           <div className="relative flex-1 min-w-[200px]">
             <Input
               placeholder="Search leads..."
@@ -338,6 +481,82 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
+
+          {/* Filter dropdown */}
+          <div className="relative shrink-0" ref={filterDropdownRef}>
+            <button
+              onClick={() => setFilterOpen((o) => !o)}
+              className={cn(
+                'flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors',
+                'hover:bg-accent hover:text-accent-foreground',
+                leadFilters.length > 0 && 'border-primary text-primary',
+              )}
+            >
+              <Filter className="h-3.5 w-3.5" />
+              {filterLabel}
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 opacity-60 transition-transform',
+                  filterOpen && 'rotate-180',
+                )}
+              />
+            </button>
+
+            {filterOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.12 }}
+                className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-border bg-background shadow-md"
+              >
+                {FILTER_OPTIONS.map(({ value, label, icon }) => {
+                  const isActive = value === 'all' ? leadFilters.length === 0 : leadFilters.includes(value)
+                  return (
+                  <button
+                    key={value}
+                    onClick={() => {
+                      if (value === 'all') {
+                        setLeadFilters([])
+                        setFilterOpen(false)
+                      } else {
+                        setLeadFilters((prev) => 
+                          prev.includes(value) 
+                            ? prev.filter((v) => v !== value) 
+                            : [...prev, value]
+                        )
+                      }
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                      isActive
+                        ? 'font-medium text-primary'
+                        : 'text-foreground',
+                    )}
+                  >
+                    {/* Checkmark for active option, spacer otherwise */}
+                    {isActive ? (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    ) : (
+                      <span className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    {icon}
+                    {label}
+                  </button>
+                )})}
+              </motion.div>
+            )}
+          </div>
+
+          {/* Showing X of Y — visible when leads are loaded */}
+          {leads.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              Showing{' '}
+              <span className="font-medium text-foreground">{visibleCount}</span>
+              {' '}of{' '}
+              <span className="font-medium text-foreground">{leads.length}</span>
+              {' '}lead{leads.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         {isSearching && leads.length === 0 ? (
@@ -350,6 +569,21 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <Users className="h-12 w-12 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">No leads yet. Start a search.</p>
+          </div>
+        ) : visibleCount === 0 ? (
+          /* Empty state when filter leaves 0 results */
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <Filter className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">No leads match this filter</p>
+            <p className="text-xs text-muted-foreground/70">
+              Try selecting a different filter or clearing your search.
+            </p>
+            <button
+              onClick={() => { setLeadFilters([]); setGlobalFilter('') }}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Clear filters
+            </button>
           </div>
         ) : (
           <>
@@ -401,44 +635,15 @@ export function LeadsTable({ leads, isSearching, onSelectLead, activeJobId, sele
             </Table>
 
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-              {/* Left: rows per page */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                Rows per page
-                <Select
-                  size="sm"
-                  className="w-20"
-                  value={String(table.getState().pagination.pageSize)}
-                  onChange={(e) => table.setPageSize(Number(e.target.value))}
-                >
-                  {[25, 50, 100].map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+              {/* Numbered pagination */}
+              <NumberedPagination
+                currentPage={table.getState().pagination.pageIndex + 1}
+                totalPages={Math.max(1, table.getPageCount())}
+                onPageChange={(page) => table.setPageIndex(page - 1)}
+              />
 
-              {/* Right: page info + Prev + Next + Export */}
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.previousPage()}
-                  disabled={!table.getCanPreviousPage()}
-                >
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => table.nextPage()}
-                  disabled={!table.getCanNextPage()}
-                >
-                  Next
-                </Button>
+              {/* Export button + success notice */}
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"

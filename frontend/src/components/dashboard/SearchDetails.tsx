@@ -12,7 +12,7 @@ interface SearchDetailsProps {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-2 items-center gap-3 border-b border-border/50 py-2 last:border-0">
+    <div className="flex items-center justify-between gap-3 py-3">
       <span className="text-xs text-muted-foreground">{label}</span>
       <div className="text-right">{children}</div>
     </div>
@@ -44,30 +44,34 @@ export function SearchDetails({ searchRequest, status, startedAt }: SearchDetail
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: 'easeOut' }}
     >
+      {/* h-full so card matches SearchHistoryPanel height in the grid row */}
       <Card className="h-full">
         <CardHeader>
           <CircleSlash2 className="h-4.5 w-4.5 text-primary" />
           <CardTitle>Search Details</CardTitle>
         </CardHeader>
-        <CardContent className="px-5 pb-4 pt-1">
-          <Row label="Keyword">
-            <Val v={searchRequest?.keyword ?? '—'} />
-          </Row>
-          <Row label="Location">
-            <Val v={searchRequest?.location ?? '—'} />
-          </Row>
-          <Row label="Radius">
-            <Val v={searchRequest ? `${searchRequest.radius_km} km` : '—'} />
-          </Row>
-          <Row label="Max Results">
-            <Val v={searchRequest ? String(searchRequest.max_results) : '—'} />
-          </Row>
-          <Row label="Started">
-            <Val v={searchRequest ? started : '—'} />
-          </Row>
-          <Row label="Status">
-            <StatusBadge status={status} />
-          </Row>
+
+        <CardContent className="px-5 pb-4 pt-0">
+          <div className="divide-y divide-border">
+            <Row label="Keyword">
+              <Val v={searchRequest?.keyword ?? '—'} />
+            </Row>
+            <Row label="Location">
+              <Val v={searchRequest?.location ?? '—'} />
+            </Row>
+            <Row label="Radius">
+              <Val v={searchRequest ? `${searchRequest.radius_km} km` : '—'} />
+            </Row>
+            <Row label="Max Results">
+              <Val v={searchRequest ? String(searchRequest.max_results) : '—'} />
+            </Row>
+            <Row label="Started">
+              <Val v={searchRequest ? started : '—'} />
+            </Row>
+            <Row label="Status">
+              <StatusBadge status={status} />
+            </Row>
+          </div>
         </CardContent>
       </Card>
     </motion.div>
